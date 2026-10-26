@@ -1,0 +1,28 @@
+id: app.akergez.Backseating
+runtime: org.freedesktop.Platform
+runtime-version: '25.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions: [org.freedesktop.Sdk.Extension.rust-stable]
+command: backseating
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  # Reviews are local: the sandbox must be able to open project directories.
+  - --filesystem=home:ro
+  - --filesystem=host:ro
+  - --talk-name=org.freedesktop.portal.Desktop
+modules:
+  - name: backseating
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin
+      env: { CARGO_HOME: /run/build/backseating/cargo }
+    build-commands:
+      - cargo build --profile dist --locked
+      - install -Dm755 target/dist/backseating /app/bin/backseating
+    sources:
+      - type: dir
+        path: ..
+        skip: [.git, target, .flatpak-build, .flatpak-repo, .cargo-home]

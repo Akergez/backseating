@@ -1,0 +1,43 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "GPL-3.0"
+authors = ["Akergez"]
+repository = "https://github.com/Akergez/backseating"
+
+# `diffreview` and `diffreview-ui` are also used from outside this workspace,
+# as git dependencies (Aiddiction's): nothing of theirs may rely on what is
+# only set up here (a `[patch]`, a feature turned on by the application).
+[workspace.dependencies]
+diffreview = { path = "crates/diffreview" }
+diffreview-ui = { path = "crates/diffreview-ui" }
+dirs = "6"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[profile.dev]
+# The toolkit is most of the build; without its debug information a debug
+# build links in seconds.
+debug = "line-tables-only"
+
+# The toolkit lays out and paints every frame; unoptimised it does so at a
+# fraction of the display's rate.
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.release]
+incremental = true
+
+[profile.dist]
+inherits = "release"
+lto = "thin"
+codegen-units = 1
+incremental = false
+strip = true

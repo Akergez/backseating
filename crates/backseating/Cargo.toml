@@ -1,0 +1,11 @@
+[package]
+name = "backseating"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+diffreview.workspace = true
+diffreview-ui.workspace = true
+gpui-kit = "0.7.0"
