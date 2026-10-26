@@ -22,6 +22,11 @@ modules:
   # The diff comes from running git, and the runtime has none.
   - name: git
     buildsystem: autotools
+    # Part of git is written in Rust now, and its build runs cargo.
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin
+      env:
+        CARGO_HOME: /run/build/git/cargo
     make-args: [NO_PERL=1, NO_PYTHON=1, NO_TCLTK=1, NO_GETTEXT=1, INSTALL_SYMLINKS=1]
     make-install-args: [NO_PERL=1, NO_PYTHON=1, NO_TCLTK=1, NO_GETTEXT=1, INSTALL_SYMLINKS=1]
     cleanup:
