@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  app.akergez.Backseating — application icon (128x128)
+  A card holding a diff, a removed line and an added one, and a note pinned
+  to its corner. Drawn like Aiddiction's card: two blues for a little depth.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="128" height="128" viewBox="0 0 128 128">
+  <!-- The card's front profile -->
+  <path fill="#0842a0" d="M 30 26 H 98 A 14 14 0 0 1 112 40 V 96 A 14 14 0 0 1 98 110 H 30 A 14 14 0 0 1 16 96 V 40 A 14 14 0 0 1 30 26 Z"/>
+  <!-- The card's top face -->
+  <path fill="#0b57d0" d="M 30 20 H 98 A 14 14 0 0 1 112 34 V 90 A 14 14 0 0 1 98 104 H 30 A 14 14 0 0 1 16 90 V 34 A 14 14 0 0 1 30 20 Z"/>
+  <!-- The diff: a removed line, an added one, context -->
+  <path fill="#f28b82" d="M 32 42 H 70 A 5 5 0 0 1 70 52 H 32 A 5 5 0 0 1 32 42 Z"/>
+  <path fill="#81c995" d="M 32 60 H 84 A 5 5 0 0 1 84 70 H 32 A 5 5 0 0 1 32 60 Z"/>
+  <path fill="#e8f0fe" d="M 32 78 H 60 A 5 5 0 0 1 60 88 H 32 A 5 5 0 0 1 32 78 Z"/>
+  <!-- The note -->
+  <path fill="#c88800" d="M 82 32 H 102 A 4 4 0 0 1 106 36 V 50 A 4 4 0 0 1 102 54 H 92 L 86 60 V 54 H 82 A 4 4 0 0 1 78 50 V 36 A 4 4 0 0 1 82 32 Z"/>
+  <path fill="#f6d32d" d="M 82 30 H 102 A 4 4 0 0 1 106 34 V 48 A 4 4 0 0 1 102 52 H 92 L 86 58 V 52 H 82 A 4 4 0 0 1 78 48 V 34 A 4 4 0 0 1 82 30 Z"/>
+</svg>

@@ -1,6 +1,6 @@
 name: Linux build dependencies
 description: >
-  The libraries listed under "Building" in README.md, and the registry cache
+  The libraries the desktop build links against, and the registry cache
   every Rust job shares.
 
 inputs:

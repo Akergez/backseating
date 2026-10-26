@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Backseating
+GenericName=Diff Reviewer
+Comment=Review local changes and leave notes for an AI agent
+Exec=backseating %f
+Icon=app.akergez.Backseating
+Terminal=false
+Categories=Development;RevisionControl;
+Keywords=diff;review;git;agent;
+StartupNotify=true

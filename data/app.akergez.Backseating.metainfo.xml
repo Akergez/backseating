@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>app.akergez.Backseating</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <name>Backseating</name>
+  <summary>Review local changes and leave notes for an AI agent</summary>
+  <developer id="app.akergez">
+    <name>Akergez</name>
+  </developer>
+
+  <description>
+    <p>
+      Opens a git project on this machine, shows what has changed in it, and
+      lets you annotate the diff line by line. The notes become a prompt you
+      hand back to the agent that made the changes.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">app.akergez.Backseating.desktop</launchable>
+  <url type="homepage">https://github.com/Akergez/backseating</url>
+  <url type="bugtracker">https://github.com/Akergez/backseating/issues</url>
+
+  <content_rating type="oars-1.1"/>
+
+  <releases>
+    <release version="0.1.0" date="2026-10-26"/>
+  </releases>
+</component>

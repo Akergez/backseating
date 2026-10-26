@@ -1,28 +1,80 @@
 id: app.akergez.Backseating
+# The plain freedesktop runtime: the interface draws itself through GPUI on
+# Vulkan and needs nothing from GTK.
 runtime: org.freedesktop.Platform
 runtime-version: '25.08'
 sdk: org.freedesktop.Sdk
-sdk-extensions: [org.freedesktop.Sdk.Extension.rust-stable]
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
 command: backseating
+
 finish-args:
   - --share=ipc
   - --socket=wayland
   - --socket=fallback-x11
   - --device=dri
-  # Reviews are local: the sandbox must be able to open project directories.
-  - --filesystem=home:ro
+  # Reviews are local: the sandbox must be able to read project directories.
   - --filesystem=host:ro
+  # The desktop's accent colour and light/dark preference, from the portal.
   - --talk-name=org.freedesktop.portal.Desktop
+
 modules:
+  # The diff comes from running git, and the runtime has none.
+  - name: git
+    buildsystem: autotools
+    make-args: [NO_PERL=1, NO_PYTHON=1, NO_TCLTK=1, NO_GETTEXT=1, INSTALL_SYMLINKS=1]
+    make-install-args: [NO_PERL=1, NO_PYTHON=1, NO_TCLTK=1, NO_GETTEXT=1, INSTALL_SYMLINKS=1]
+    cleanup:
+      - /share/git-core/templates
+      - /share/perl5
+      - /libexec/git-core/git-gui*
+      - /libexec/git-core/gitk*
+    sources:
+      - type: archive
+        url: https://mirrors.edge.kernel.org/pub/software/scm/git/git-2.56.0.tar.xz
+        sha256: 26c56c296b38c0695b26fa95f475f1d01704d2d38e73465ca30b0b2f5dc789d3
+
   - name: backseating
     buildsystem: simple
     build-options:
       append-path: /usr/lib/sdk/rust-stable/bin
-      env: { CARGO_HOME: /run/build/backseating/cargo }
+      env:
+        CARGO_HOME: /run/build/backseating/cargo
+      # This repository builds from crates.io rather than from a generated
+      # offline source list: it is published from our own CI, not Flathub,
+      # so a network-isolated build buys nothing but a megabyte of churn in
+      # cargo-sources.json on every dependency bump.
+      build-args:
+        - --share=network
     build-commands:
-      - cargo build --profile dist --locked
+      - cargo build --profile dist --locked -p backseating
       - install -Dm755 target/dist/backseating /app/bin/backseating
+      - install -Dm644 data/app.akergez.Backseating.desktop /app/share/applications/app.akergez.Backseating.desktop
+      - install -Dm644 data/app.akergez.Backseating.metainfo.xml /app/share/metainfo/app.akergez.Backseating.metainfo.xml
+      - install -Dm644 LICENSE -t /app/share/licenses/app.akergez.Backseating
+      # The icon ships rasterized. Both `flatpak build-export` and
+      # appstreamcli load icons through glycin, which has no SVG loader in the
+      # images this is built on, so an exported SVG fails the build outright. The
+      # source of truth is still the SVG in data/.
+      - rsvg-convert -w 128 -h 128 -o icon-128.png
+        data/icons/hicolor/scalable/apps/app.akergez.Backseating.svg
+      - rsvg-convert -w 256 -h 256 -o icon-256.png
+        data/icons/hicolor/scalable/apps/app.akergez.Backseating.svg
+      - install -Dm644 icon-128.png
+        /app/share/icons/hicolor/128x128/apps/app.akergez.Backseating.png
+      - install -Dm644 icon-256.png
+        /app/share/icons/hicolor/256x256/apps/app.akergez.Backseating.png
     sources:
       - type: dir
         path: ..
-        skip: [.git, target, .flatpak-build, .flatpak-repo, .cargo-home]
+        # Everything the publish script itself writes into the checkout. The
+        # ostree repository and the builder's state directory are large; the
+        # state directory also holds live mounts, which cannot be copied.
+        skip:
+          - .git
+          - .flatpak-build
+          - .flatpak-repo
+          - .flatpak-state
+          - .cargo-home
+          - dist
+          - target
