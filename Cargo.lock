@@ -580,7 +580,7 @@ dependencies = [
 
 [[package]]
 name = "backseating"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "diffreview",
  "diffreview-ui",
@@ -1421,7 +1421,7 @@ dependencies = [
 
 [[package]]
 name = "diffreview"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -1430,7 +1430,7 @@ dependencies = [
 
 [[package]]
 name = "diffreview-ui"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "diffreview",
  "dirs 6.0.0",
