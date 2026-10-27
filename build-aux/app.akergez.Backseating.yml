@@ -15,8 +15,11 @@ finish-args:
   - --device=dri
   # Reviews are local: the sandbox must be able to read project directories.
   - --filesystem=host:ro
-  # The desktop's accent colour and light/dark preference, from the portal.
+  # The desktop's accent colour and light/dark preference, and the folder
+  # picker, from the portal.
   - --talk-name=org.freedesktop.portal.Desktop
+  # The settings browse and install themes from the Zed editor's registry.
+  - --share=network
 
 modules:
   # The diff comes from running git, and the runtime has none.

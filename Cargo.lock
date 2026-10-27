@@ -83,6 +83,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "adaptive-colors"
+version = "0.1.0"
+source = "git+https://github.com/Akergez/gpui-adaptive-colors?rev=55e9997f9bf9858f7a9242bcf75a92cf15732596#55e9997f9bf9858f7a9242bcf75a92cf15732596"
+dependencies = [
+ "jni",
+ "material-colors",
+ "ndk-context",
+ "zbus",
+]
+
+[[package]]
 name = "addr2line"
 version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -117,6 +128,7 @@ checksum = "5a15f179cd60c4584b8a8c596927aadc462e27f2ca70c04e0071964a73ba7a75"
 dependencies = [
  "cfg-if",
  "const-random",
+ "getrandom 0.3.4",
  "once_cell",
  "version_check",
  "zerocopy",
@@ -584,7 +596,12 @@ version = "0.1.3"
 dependencies = [
  "diffreview",
  "diffreview-ui",
+ "dirs 6.0.0",
+ "gpui-adaptive-colors",
  "gpui-kit",
+ "gpui-zed-themes",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -2325,6 +2342,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "gpui-adaptive-colors"
+version = "0.1.0"
+source = "git+https://github.com/Akergez/gpui-adaptive-colors?rev=55e9997f9bf9858f7a9242bcf75a92cf15732596#55e9997f9bf9858f7a9242bcf75a92cf15732596"
+dependencies = [
+ "adaptive-colors",
+ "futures",
+ "gpui-kit",
+ "serde_json",
+]
+
+[[package]]
 name = "gpui-android-glue"
 version = "0.1.2"
 source = "git+https://github.com/Akergez/gpui-android-glue?tag=v0.1.2#c5b96a399ac0250dbaaa1885a915cee7af504da5"
@@ -3036,6 +3064,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "829258540ea51bb9ea4a71686beffe5c99586901ba9f39944d06e4a180ab63fe"
 
 [[package]]
+name = "gpui-zed-themes"
+version = "0.1.0"
+source = "git+https://github.com/Akergez/gpui-adaptive-colors?rev=55e9997f9bf9858f7a9242bcf75a92cf15732596#55e9997f9bf9858f7a9242bcf75a92cf15732596"
+dependencies = [
+ "flate2",
+ "gpui-kit",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tar",
+ "thiserror 2.0.21",
+ "tracing",
+]
+
+[[package]]
 name = "granit-parser"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3285,6 +3328,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tower-service",
+ "webpki-roots",
 ]
 
 [[package]]
@@ -3293,6 +3337,7 @@ version = "0.1.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ddc03d96684f9226b8a787cdb71488417b53ab5ea8fdb1dac946cb9431cc8bff"
 dependencies = [
+ "base64 0.23.1",
  "bytes",
  "futures-channel",
  "futures-util",
@@ -3300,7 +3345,9 @@ dependencies = [
  "http-body",
  "httparse",
  "hyper",
+ "ipnet",
  "libc",
+ "percent-encoding",
  "pin-project-lite",
  "socket2",
  "tokio",
@@ -4067,6 +4114,17 @@ dependencies = [
  "markup5ever",
  "tendril",
  "xml5ever",
+]
+
+[[package]]
+name = "material-colors"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e226ffda362d5bc26bb8f730d637a0851eedfb05e35d92108c9d8b48d2e47941"
+dependencies = [
+ "ahash",
+ "indexmap",
+ "serde",
 ]
 
 [[package]]
@@ -5792,6 +5850,46 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 
 [[package]]
+name = "reqwest"
+version = "0.12.28"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eddd3ca559203180a307f12d114c268abf583f59b03cb906fd0b3ff8646c1147"
+dependencies = [
+ "base64 0.22.1",
+ "bytes",
+ "futures-channel",
+ "futures-core",
+ "futures-util",
+ "http",
+ "http-body",
+ "http-body-util",
+ "hyper",
+ "hyper-rustls",
+ "hyper-util",
+ "js-sys",
+ "log",
+ "percent-encoding",
+ "pin-project-lite",
+ "quinn",
+ "rustls",
+ "rustls-pki-types",
+ "serde",
+ "serde_json",
+ "serde_urlencoded",
+ "sync_wrapper",
+ "tokio",
+ "tokio-rustls",
+ "tower",
+ "tower-http",
+ "tower-service",
+ "url",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "webpki-roots",
+]
+
+[[package]]
 name = "resvg"
 version = "0.45.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6871,6 +6969,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tar"
+version = "0.4.46"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f6221d9a6003c78398e3b239969f352578258df48c8eb051caadae0015bc840"
+dependencies = [
+ "filetime",
+ "libc",
+]
+
+[[package]]
 name = "tauri-winrt-notification"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7202,6 +7310,24 @@ dependencies = [
  "tokio",
  "tower-layer",
  "tower-service",
+]
+
+[[package]]
+name = "tower-http"
+version = "0.6.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4cfcf7e2740e6fc6d4d688b4ef00650406bb94adf4731e43c096c3a19fe40840"
+dependencies = [
+ "bitflags 2.13.2",
+ "bytes",
+ "futures-util",
+ "http",
+ "http-body",
+ "pin-project-lite",
+ "tower",
+ "tower-layer",
+ "tower-service",
+ "url",
 ]
 
 [[package]]
@@ -8135,6 +8261,15 @@ checksum = "5a6580f308b1fad9207618087a65c04e7a10bc77e02c8e84e9b00dd4b12fa0bb"
 dependencies = [
  "js-sys",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "webpki-roots"
+version = "1.0.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f5f280bbb2b287bc8e7de7e3852945a0ff50d1bbcb5ed42b6c7a568c546df171"
+dependencies = [
+ "rustls-pki-types",
 ]
 
 [[package]]

@@ -9,3 +9,10 @@ license.workspace = true
 diffreview.workspace = true
 diffreview-ui.workspace = true
 gpui-kit = "0.7.0"
+dirs.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+# The theme engine Aiddiction and matterfast use: a Material You scheme from
+# the system's colour, and themes for the Zed editor from its registry.
+gpui-adaptive-colors = { git = "https://github.com/Akergez/gpui-adaptive-colors", rev = "55e9997f9bf9858f7a9242bcf75a92cf15732596" }
+gpui-zed-themes = { git = "https://github.com/Akergez/gpui-adaptive-colors", rev = "55e9997f9bf9858f7a9242bcf75a92cf15732596" }
