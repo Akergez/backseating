@@ -9,7 +9,6 @@ use diffreview::annotation::{self, Anchor, Annotation, Store};
 use diffreview::{DiffRequest, DiffSource, FileDiff, FileStatus, LineKind, Refs};
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::dialog::{DialogAction, DialogClose, DialogFooter};
-use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::component::list::ListItem;
 use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::tree::{TreeItem, TreeState, tree};
@@ -23,12 +22,13 @@ use gpui_kit::{
     Window, div, uniform_list,
 };
 
+use crate::compare::ComparePicker;
 use crate::editor::AnnotationEditor;
 use crate::highlight::{self, LineStyles};
 use crate::rows::{self, Row};
 use crate::{
-    Annotate, AnnotateFile, CONTEXT, CursorDown, CursorUp, DeleteAnnotation, NextFile, NextHunk,
-    PageDown, PageUp, PreviousFile, PreviousHunk, Reload, ReviewBackend, ReviewEvent,
+    Annotate, AnnotateFile, CONTEXT, Compare, CursorDown, CursorUp, DeleteAnnotation, NextFile,
+    NextHunk, PageDown, PageUp, PreviousFile, PreviousHunk, Reload, ReviewBackend, ReviewEvent,
     ReviewOptions, Submit, ToggleReviewed,
 };
 
@@ -51,7 +51,6 @@ pub struct ReviewView {
     reviewed: HashSet<String>,
     scroll: UniformListScrollHandle,
     focus: FocusHandle,
-    ref_input: Entity<InputState>,
     /// On a narrow window: the list of files instead of the diff.
     showing_files: bool,
     /// Bumped on every load, so an answer to an older one is dropped.
@@ -80,7 +79,9 @@ impl ReviewView {
         backend: Rc<dyn ReviewBackend>,
         request: DiffRequest,
         options: ReviewOptions,
-        window: &mut Window,
+        // Kept for the hosts that call it: the view used to make a text
+        // field here, and may again.
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
         let mut this = Self {
@@ -98,7 +99,6 @@ impl ReviewView {
             reviewed: HashSet::new(),
             scroll: UniformListScrollHandle::new(),
             focus: cx.focus_handle(),
-            ref_input: cx.new(|cx| InputState::new(window, cx).placeholder("ref, e.g. HEAD~3")),
             showing_files: true,
             generation: 0,
             tree: cx.new(|cx| TreeState::new(cx)),
@@ -326,6 +326,43 @@ impl ReviewView {
         self.load(cx);
     }
 
+    /// The dialog that compares any two points: branches, tags, commits, a
+    /// ref typed in, the working tree or the index.
+    fn compare(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // The branches may not be read yet, or not readable; a ref can still
+        // be typed in.
+        let refs = self.refs.clone().unwrap_or_default();
+        let current = self.request.source.clone();
+        let picker = cx.new(|cx| ComparePicker::new(&refs, &current, window, cx));
+        let this = cx.entity().downgrade();
+        window.open_dialog(cx, move |dialog, _, _| {
+            let (picker, this) = (picker.clone(), this.clone());
+            dialog
+                .title("Compare")
+                .w(gpui_kit::px(480.))
+                .child(picker.clone())
+                .footer(
+                    DialogFooter::new()
+                        .child(DialogClose::new().child(Button::new("cancel").label("Cancel")))
+                        .child(
+                            DialogAction::new().child(Button::new("ok").label("Compare").primary()),
+                        ),
+                )
+                .on_ok(move |_, window, cx| {
+                    // A choice that is not one keeps the dialog open, with
+                    // the reason under it.
+                    let Ok(source) = picker.update(cx, |picker, cx| picker.source(cx)) else {
+                        return false;
+                    };
+                    let _ = this.update(cx, |view, cx| {
+                        view.set_source(source, cx);
+                        view.focus.focus(window, cx);
+                    });
+                    true
+                })
+        });
+    }
+
     /// The line under the cursor (a note row stands for its line).
     fn cursor_line(&self) -> Option<usize> {
         match self.rows.get(self.cursor)? {
@@ -546,92 +583,95 @@ impl ReviewView {
         }
         let full = self.request.context.is_none();
         let untracked = self.request.untracked;
-        #[cfg(all(target_os = "android", feature = "android"))]
-        let ref_field = gpui_android_glue::keyboard::on_tap(
-            Input::new(&self.ref_input).xsmall(),
-            &self.ref_input,
-            cx,
-        );
-        #[cfg(not(all(target_os = "android", feature = "android")))]
-        let ref_field = Input::new(&self.ref_input).xsmall();
-        bar.child(div().w_32().child(ref_field))
-            .child(
-                Button::new("against")
+        // What the quick buttons do not cover is chosen in the dialog, and
+        // named on its button while it is in use.
+        let quick = matches!(source, DiffSource::Uncommitted | DiffSource::Staged)
+            || *source
+                == (DiffSource::Between {
+                    from: "HEAD~1".into(),
+                    to: "HEAD".into(),
+                })
+            || matches!(source, DiffSource::Since { head, .. } if head == "HEAD"
+                && self.refs.as_ref().is_some_and(|refs| refs.current_branch.is_some()));
+        let compare_label: SharedString = if quick {
+            "Compare…".into()
+        } else {
+            format!("{} …", source.label()).into()
+        };
+        bar.child(
+            Button::new("compare")
+                .xsmall()
+                .label(compare_label)
+                .selected(!quick)
+                .when(quick, |button| button.ghost())
+                .tooltip("Branches, tags, commits or any ref (c)")
+                .on_click(cx.listener(|this, _, window, cx| this.compare(window, cx))),
+        )
+        .child(div().w_2())
+        .child(
+            Button::new("full")
+                .xsmall()
+                .label(if full { "Full files" } else { "Compact" })
+                .ghost()
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.request.context = if full { Some(3) } else { None };
+                    this.load(cx);
+                })),
+        )
+        .child(
+            Button::new("untracked")
+                .xsmall()
+                .ghost()
+                .selected(untracked)
+                .label("Untracked")
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.request.untracked = !untracked;
+                    this.load(cx);
+                })),
+        )
+        .child(
+            Button::new("reload")
+                .xsmall()
+                .ghost()
+                .icon(IconName::RefreshCw)
+                .tooltip("Reload (R)")
+                .on_click(cx.listener(|this, _, _, cx| this.load(cx))),
+        )
+        .child(div().flex_1())
+        .child(
+            div()
+                .text_xs()
+                .text_color(cx.theme().muted_foreground)
+                .child(match self.store.count() {
+                    0 => "No annotations".to_owned(),
+                    1 => "1 annotation".to_owned(),
+                    count => format!("{count} annotations"),
+                }),
+        )
+        .child(
+            Button::new("copy")
+                .xsmall()
+                .ghost()
+                .icon(IconName::Copy)
+                .tooltip("Copy annotations")
+                .on_click(cx.listener(|this, _, window, cx| this.copy(window, cx))),
+        )
+        .when_some(self.options.discard_label.clone(), |bar, label| {
+            bar.child(
+                Button::new("discard")
                     .xsmall()
-                    .ghost()
-                    .label("Diff")
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        let base = this.ref_input.read(cx).value().trim().to_owned();
-                        if !base.is_empty() {
-                            this.set_source(DiffSource::Against { base }, cx);
-                        }
-                    })),
+                    .label(label)
+                    .on_click(cx.listener(|_, _, _, cx| cx.emit(ReviewEvent::Discard))),
             )
-            .child(div().w_2())
-            .child(
-                Button::new("full")
-                    .xsmall()
-                    .label(if full { "Full files" } else { "Compact" })
-                    .ghost()
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.request.context = if full { Some(3) } else { None };
-                        this.load(cx);
-                    })),
-            )
-            .child(
-                Button::new("untracked")
-                    .xsmall()
-                    .ghost()
-                    .selected(untracked)
-                    .label("Untracked")
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.request.untracked = !untracked;
-                        this.load(cx);
-                    })),
-            )
-            .child(
-                Button::new("reload")
-                    .xsmall()
-                    .ghost()
-                    .icon(IconName::RefreshCw)
-                    .tooltip("Reload (R)")
-                    .on_click(cx.listener(|this, _, _, cx| this.load(cx))),
-            )
-            .child(div().flex_1())
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(cx.theme().muted_foreground)
-                    .child(match self.store.count() {
-                        0 => "No annotations".to_owned(),
-                        1 => "1 annotation".to_owned(),
-                        count => format!("{count} annotations"),
-                    }),
-            )
-            .child(
-                Button::new("copy")
-                    .xsmall()
-                    .ghost()
-                    .icon(IconName::Copy)
-                    .tooltip("Copy annotations")
-                    .on_click(cx.listener(|this, _, window, cx| this.copy(window, cx))),
-            )
-            .when_some(self.options.discard_label.clone(), |bar, label| {
-                bar.child(
-                    Button::new("discard")
-                        .xsmall()
-                        .label(label)
-                        .on_click(cx.listener(|_, _, _, cx| cx.emit(ReviewEvent::Discard))),
-                )
-            })
-            .child(
-                Button::new("submit")
-                    .xsmall()
-                    .primary()
-                    .label(self.options.submit_label.clone())
-                    .tooltip("Ctrl+Enter")
-                    .on_click(cx.listener(|this, _, _, cx| this.submit(cx))),
-            )
+        })
+        .child(
+            Button::new("submit")
+                .xsmall()
+                .primary()
+                .label(self.options.submit_label.clone())
+                .tooltip("Ctrl+Enter")
+                .on_click(cx.listener(|this, _, _, cx| this.submit(cx))),
+        )
     }
 
     fn render_files(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -1020,6 +1060,7 @@ impl Render for ReviewView {
             .on_action(cx.listener(|this, _: &DeleteAnnotation, _, cx| this.delete_annotation(cx)))
             .on_action(cx.listener(|this, _: &ToggleReviewed, _, cx| this.toggle_reviewed(cx)))
             .on_action(cx.listener(|this, _: &Reload, _, cx| this.load(cx)))
+            .on_action(cx.listener(|this, _: &Compare, window, cx| this.compare(window, cx)))
             .on_action(cx.listener(|this, _: &Submit, _, cx| this.submit(cx)))
             .child(self.render_toolbar(cx))
             .children(status)

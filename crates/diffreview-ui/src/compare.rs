@@ -7,8 +7,11 @@
 use diffreview::{Comparison, DiffSource, Point, Refs};
 use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::input::{Input, InputState};
-use gpui_kit::component::select::{SearchableGroup, SearchableListItem, SearchableVec, Select, SelectState};
-use gpui_kit::component::{ActiveTheme, IndexPath, Sizable as _, h_flex, v_flex};
+use gpui_kit::component::select::{
+    SearchableVec, Select, SelectGroup as SearchableGroup, SelectItem as SearchableListItem,
+    SelectState,
+};
+use gpui_kit::component::{ActiveTheme, Disableable as _, IndexPath, Sizable as _, h_flex, v_flex};
 use gpui_kit::prelude::*;
 use gpui_kit::{App, AppContext, Context, Entity, Render, SharedString, Window, div};
 
@@ -25,7 +28,9 @@ impl RefItem {
         Self {
             title: name.to_owned().into(),
             detail: detail.map(|detail| detail.to_owned().into()),
-            point: Point::Ref { name: name.to_owned() },
+            point: Point::Ref {
+                name: name.to_owned(),
+            },
         }
     }
 }
@@ -43,9 +48,19 @@ impl SearchableListItem for RefItem {
             .w_full()
             .min_w_0()
             .gap_2()
-            .child(div().flex_none().font_family(theme.mono_font_family.clone()).child(self.title.clone()))
+            .child(
+                div()
+                    .flex_none()
+                    .font_family(theme.mono_font_family.clone())
+                    .child(self.title.clone()),
+            )
             .children(self.detail.clone().map(|detail| {
-                div().flex_1().min_w_0().truncate().text_color(theme.muted_foreground).child(detail)
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .text_color(theme.muted_foreground)
+                    .child(detail)
             }))
     }
 
@@ -57,7 +72,10 @@ impl SearchableListItem for RefItem {
     fn matches(&self, query: &str) -> bool {
         let query = query.to_lowercase();
         self.title.to_lowercase().contains(&query)
-            || self.detail.as_ref().is_some_and(|detail| detail.to_lowercase().contains(&query))
+            || self
+                .detail
+                .as_ref()
+                .is_some_and(|detail| detail.to_lowercase().contains(&query))
     }
 }
 
@@ -71,22 +89,43 @@ fn groups(refs: &Refs, target: bool, extra: Option<&Point>) -> Vec<SearchableGro
     let mut here = SearchableGroup::new("Here");
     if target {
         here = here
-            .item(RefItem { title: "Working tree".into(), detail: Some("the files on disk".into()), point: Point::WorkingTree })
-            .item(RefItem { title: "Staged".into(), detail: Some("the index, against HEAD".into()), point: Point::Staged });
+            .item(RefItem {
+                title: "Working tree".into(),
+                detail: Some("the files on disk".into()),
+                point: Point::WorkingTree,
+            })
+            .item(RefItem {
+                title: "Staged".into(),
+                detail: Some("the index, against HEAD".into()),
+                point: Point::Staged,
+            });
     }
-    here = here.item(RefItem::named("HEAD", refs.current_branch.as_deref().or(Some("detached"))));
+    here = here.item(RefItem::named(
+        "HEAD",
+        refs.current_branch.as_deref().or(Some("detached")),
+    ));
     groups.push(here);
     let known = |name: &str| {
         name == "HEAD"
-            || refs.branches.iter().chain(&refs.remote_branches).chain(&refs.tags).any(|known| known == name)
+            || refs
+                .branches
+                .iter()
+                .chain(&refs.remote_branches)
+                .chain(&refs.tags)
+                .any(|known| known == name)
             || refs.commits.iter().any(|(hash, _)| hash == name)
     };
     if let Some(Point::Ref { name }) = extra
-        && !known(name) {
-            groups.insert(0, SearchableGroup::new("In use").item(RefItem::named(name, None)));
-        }
+        && !known(name)
+    {
+        groups.insert(
+            0,
+            SearchableGroup::new("In use").item(RefItem::named(name, None)),
+        );
+    }
     let named = |title: &str, names: &[String], detail: &dyn Fn(&str) -> Option<&'static str>| {
-        SearchableGroup::new(title.to_owned()).items(names.iter().map(|name| RefItem::named(name, detail(name))))
+        SearchableGroup::new(title.to_owned())
+            .items(names.iter().map(|name| RefItem::named(name, detail(name))))
     };
     let current = refs.current_branch.clone();
     let default = refs.default_branch.clone();
@@ -100,7 +139,11 @@ fn groups(refs: &Refs, target: bool, extra: Option<&Point>) -> Vec<SearchableGro
         }
     };
     for (title, names, detail) in [
-        ("Branches", &refs.branches, &branch_detail as &dyn Fn(&str) -> Option<&'static str>),
+        (
+            "Branches",
+            &refs.branches,
+            &branch_detail as &dyn Fn(&str) -> Option<&'static str>,
+        ),
         ("Remote branches", &refs.remote_branches, &|_: &str| None),
         ("Tags", &refs.tags, &|_: &str| None),
     ] {
@@ -110,8 +153,11 @@ fn groups(refs: &Refs, target: bool, extra: Option<&Point>) -> Vec<SearchableGro
     }
     if !refs.commits.is_empty() {
         groups.push(
-            SearchableGroup::new("Commits")
-                .items(refs.commits.iter().map(|(hash, subject)| RefItem::named(hash, Some(subject)))),
+            SearchableGroup::new("Commits").items(
+                refs.commits
+                    .iter()
+                    .map(|(hash, subject)| RefItem::named(hash, Some(subject))),
+            ),
         );
     }
     groups
@@ -120,7 +166,11 @@ fn groups(refs: &Refs, target: bool, extra: Option<&Point>) -> Vec<SearchableGro
 /// Where `point` is in `groups`.
 fn position(groups: &[SearchableGroup<RefItem>], point: &Point) -> Option<IndexPath> {
     groups.iter().enumerate().find_map(|(section, group)| {
-        group.items.iter().position(|item| item.point == *point).map(|row| IndexPath::default().section(section).row(row))
+        group
+            .items
+            .iter()
+            .position(|item| item.point == *point)
+            .map(|row| IndexPath::default().section(section).row(row))
     })
 }
 
@@ -134,13 +184,22 @@ pub struct ComparePicker {
 }
 
 impl ComparePicker {
-    pub fn new(refs: &Refs, current: &DiffSource, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        refs: &Refs,
+        current: &DiffSource,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let comparison = Comparison::from(current);
-        let base_point = Point::Ref { name: comparison.base.clone() };
+        let base_point = Point::Ref {
+            name: comparison.base.clone(),
+        };
         let select = |target: bool, point: &Point, window: &mut Window, cx: &mut Context<Self>| {
             let groups = groups(refs, target, Some(point));
             let selected = position(&groups, point);
-            cx.new(|cx| SelectState::new(SearchableVec::new(groups), selected, window, cx).searchable(true))
+            cx.new(|cx| {
+                SelectState::new(SearchableVec::new(groups), selected, window, cx).searchable(true)
+            })
         };
         let base = select(false, &base_point, window, cx);
         let target = select(true, &comparison.target, window, cx);
@@ -186,11 +245,19 @@ impl ComparePicker {
                 Point::Staged => "HEAD".to_owned(),
                 _ => self.base_name(cx).ok_or("Pick what to compare it with.")?,
             };
-            let source = Comparison { base, target, since: self.since }.source();
+            let source = Comparison {
+                base,
+                target,
+                since: self.since,
+            }
+            .source();
             source.validate()?;
             Ok(source)
         })();
-        self.error = result.as_ref().err().map(|error: &String| error.clone().into());
+        self.error = result
+            .as_ref()
+            .err()
+            .map(|error: &String| error.clone().into());
         cx.notify();
         result
     }
@@ -202,14 +269,25 @@ impl Render for ComparePicker {
         let target = self.target_point(cx);
         let staged = target == Some(Point::Staged);
         let target_is_ref = matches!(target, Some(Point::Ref { .. }));
-        let label = |text: &'static str| div().text_sm().font_weight(gpui_kit::FontWeight::MEDIUM).child(text);
+        let label = |text: &'static str| {
+            div()
+                .text_sm()
+                .font_weight(gpui_kit::FontWeight::MEDIUM)
+                .child(text)
+        };
         let select = |state: &Entity<SelectState<Groups>>, disabled: bool| {
-            Select::new(state).small().menu_max_h(gpui_kit::rems(22.)).search_placeholder("Search").disabled(disabled)
+            Select::new(state)
+                .small()
+                .menu_max_h(gpui_kit::rems(22.))
+                .search_placeholder("Search")
+                .disabled(disabled)
         };
         let preview: SharedString = match (self.base_name(cx), &target) {
             (_, Some(Point::Staged)) => "git diff --cached".into(),
             (Some(base), Some(Point::WorkingTree)) => format!("git diff {base}").into(),
-            (Some(base), Some(Point::Ref { name })) if self.since => format!("git diff {base}...{name}").into(),
+            (Some(base), Some(Point::Ref { name })) if self.since => {
+                format!("git diff {base}...{name}").into()
+            }
             (Some(base), Some(Point::Ref { name })) => format!("git diff {base} {name}").into(),
             _ => SharedString::default(),
         };
@@ -246,7 +324,9 @@ impl Render for ComparePicker {
                     .text_color(theme.muted_foreground)
                     .child(preview),
             )
-            .when_some(self.error.clone(), |column, error| column.child(div().text_sm().text_color(theme.danger).child(error)))
+            .when_some(self.error.clone(), |column, error| {
+                column.child(div().text_sm().text_color(theme.danger).child(error))
+            })
     }
 }
 
@@ -267,22 +347,42 @@ mod tests {
 
     #[test]
     fn the_target_offers_the_working_tree_and_empty_groups_are_left_out() {
-        let titles = |groups: &[SearchableGroup<RefItem>]| groups.iter().map(|group| group.title.to_string()).collect::<Vec<_>>();
+        let titles = |groups: &[SearchableGroup<RefItem>]| {
+            groups
+                .iter()
+                .map(|group| group.title.to_string())
+                .collect::<Vec<_>>()
+        };
         let target = groups(&refs(), true, None);
-        assert_eq!(titles(&target), ["Here", "Branches", "Remote branches", "Commits"]);
+        assert_eq!(
+            titles(&target),
+            ["Here", "Branches", "Remote branches", "Commits"]
+        );
         assert_eq!(target[0].items[0].point, Point::WorkingTree);
         let base = groups(&refs(), false, None);
         assert_eq!(base[0].items.len(), 1);
-        assert_eq!(position(&base, &Point::Ref { name: "main".into() }), Some(IndexPath::default().section(1).row(1)));
+        assert_eq!(
+            position(
+                &base,
+                &Point::Ref {
+                    name: "main".into()
+                }
+            ),
+            Some(IndexPath::default().section(1).row(1))
+        );
     }
 
     #[test]
     fn a_point_the_lists_lack_is_offered_first() {
-        let extra = Point::Ref { name: "HEAD~3".into() };
+        let extra = Point::Ref {
+            name: "HEAD~3".into(),
+        };
         let base = groups(&refs(), false, Some(&extra));
         assert_eq!(base[0].title.as_ref(), "In use");
         assert_eq!(position(&base, &extra), Some(IndexPath::default()));
-        let known = Point::Ref { name: "abc1234".into() };
+        let known = Point::Ref {
+            name: "abc1234".into(),
+        };
         assert_eq!(groups(&refs(), false, Some(&known)).len(), base.len() - 1);
     }
 

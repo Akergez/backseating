@@ -9,6 +9,7 @@
 //!
 //! Call [`init`] once, after `gpui_kit::init`, for the key bindings.
 
+mod compare;
 mod editor;
 mod highlight;
 mod local;
@@ -39,6 +40,7 @@ gpui_kit::actions!(
         DeleteAnnotation,
         ToggleReviewed,
         Reload,
+        Compare,
         Submit
     ]
 );
@@ -67,6 +69,7 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("d", DeleteAnnotation, Some(CONTEXT)),
         KeyBinding::new("space", ToggleReviewed, Some(CONTEXT)),
         KeyBinding::new("shift-r", Reload, Some(CONTEXT)),
+        KeyBinding::new("c", Compare, Some(CONTEXT)),
         KeyBinding::new("ctrl-enter", Submit, Some(CONTEXT)),
     ]);
 }
