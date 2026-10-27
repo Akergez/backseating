@@ -3,6 +3,7 @@
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
+use std::sync::OnceLock;
 
 use crate::source::{DiffRequest, Refs};
 
@@ -15,8 +16,13 @@ pub struct LocalRepo {
 }
 
 impl LocalRepo {
-    /// The repository `dir` is in.
+    /// The repository `dir` is in. A leading `~` is the home folder, as a
+    /// path typed by hand means it.
     pub fn open(dir: &Path) -> Result<Self, String> {
+        let dir = &expand_home(dir);
+        if !dir.is_dir() {
+            return Err(format!("{} is not a folder", dir.display()));
+        }
         let output = git(dir, &["rev-parse", "--show-toplevel"])?;
         let root = String::from_utf8_lossy(&output.stdout).trim().to_owned();
         if !output.status.success() || root.is_empty() {
@@ -153,8 +159,108 @@ impl LocalRepo {
     }
 }
 
-fn git(dir: &Path, args: &[&str]) -> Result<Output, String> {
-    let mut command = Command::new("git");
+/// `~` and `~/…` as the home folder; any other path as it is.
+fn expand_home(path: &Path) -> PathBuf {
+    let home = || std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"));
+    match path.strip_prefix("~") {
+        Ok(rest) => match home() {
+            Some(home) => PathBuf::from(home).join(rest),
+            None => path.to_owned(),
+        },
+        Err(_) => path.to_owned(),
+    }
+}
+
+/// The variable that names the git to run, when it is nowhere it is looked for.
+pub const GIT_VARIABLE: &str = "DIFFREVIEW_GIT";
+
+/// The git to run, found once.
+///
+/// `git` on the `PATH` is not always there for a program started from a
+/// desktop rather than a terminal: an application opened from the Finder has
+/// the bare system `PATH`, without Homebrew's, and Git for Windows may not
+/// have put itself on it. So when `git` does not run, the login shell is asked
+/// where its `git` is, and then the places git is usually installed.
+pub fn program() -> Option<&'static Path> {
+    static PROGRAM: OnceLock<Option<PathBuf>> = OnceLock::new();
+    PROGRAM.get_or_init(find_program).as_deref()
+}
+
+fn find_program() -> Option<PathBuf> {
+    if let Some(named) = std::env::var_os(GIT_VARIABLE).filter(|named| !named.is_empty()) {
+        return Some(named.into());
+    }
+    let runs = |program: &Path| {
+        command(program)
+            .arg("--version")
+            .output()
+            .is_ok_and(|output| output.status.success())
+    };
+    let plain = PathBuf::from("git");
+    if runs(&plain) {
+        return Some(plain);
+    }
+    login_shell_git()
+        .into_iter()
+        .chain(usual_places())
+        .find(|candidate| candidate.is_file() && runs(candidate))
+}
+
+/// Where the login shell finds `git`: the `PATH` a terminal would have.
+#[cfg(unix)]
+fn login_shell_git() -> Option<PathBuf> {
+    let shell = std::env::var_os("SHELL")?;
+    let output = Command::new(shell)
+        .args(["-l", "-c", "command -v git"])
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&output.stdout);
+    let found = text
+        .lines()
+        .map(str::trim)
+        .rfind(|line| line.starts_with('/'))?;
+    Some(PathBuf::from(found))
+}
+
+#[cfg(not(unix))]
+fn login_shell_git() -> Option<PathBuf> {
+    None
+}
+
+fn usual_places() -> Vec<PathBuf> {
+    let mut places: Vec<PathBuf> = Vec::new();
+    if cfg!(windows) {
+        for (variable, under) in [
+            ("ProgramFiles", r"Git\cmd\git.exe"),
+            ("ProgramFiles(x86)", r"Git\cmd\git.exe"),
+            ("LOCALAPPDATA", r"Programs\Git\cmd\git.exe"),
+            ("USERPROFILE", r"scoop\shims\git.exe"),
+        ] {
+            if let Some(root) = std::env::var_os(variable) {
+                places.push(PathBuf::from(root).join(under));
+            }
+        }
+    } else {
+        places.extend(
+            [
+                "/opt/homebrew/bin/git",
+                "/usr/local/bin/git",
+                "/opt/local/bin/git",
+                "/usr/bin/git",
+                "/run/current-system/sw/bin/git",
+            ]
+            .map(PathBuf::from),
+        );
+        if let Some(home) = std::env::var_os("HOME") {
+            places.push(PathBuf::from(home).join(".nix-profile/bin/git"));
+        }
+    }
+    places
+}
+
+fn command(program: &Path) -> Command {
+    #[cfg_attr(not(windows), allow(unused_mut))]
+    let mut command = Command::new(program);
     // A windowed program on Windows would flash a console for every git.
     #[cfg(windows)]
     {
@@ -163,6 +269,13 @@ fn git(dir: &Path, args: &[&str]) -> Result<Output, String> {
         command.creation_flags(CREATE_NO_WINDOW);
     }
     command
+}
+
+fn git(dir: &Path, args: &[&str]) -> Result<Output, String> {
+    let program = program().ok_or_else(|| {
+        format!("git was not found: install it, or set {GIT_VARIABLE} to the git to run")
+    })?;
+    command(program)
         .args(args)
         .current_dir(dir)
         // Never wait for a person, never page, never translate messages that
@@ -263,5 +376,29 @@ mod tests {
     fn a_folder_outside_git_is_refused() {
         let dir = tempfile::tempdir().unwrap();
         assert!(LocalRepo::open(dir.path()).is_err());
+    }
+
+    #[test]
+    fn a_missing_folder_is_named_as_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("gone");
+        let error = LocalRepo::open(&missing).err().unwrap();
+        assert_eq!(error, format!("{} is not a folder", missing.display()));
+    }
+
+    #[test]
+    fn a_tilde_is_the_home_folder() {
+        let Some(home) = std::env::var_os("HOME") else {
+            return;
+        };
+        let home = PathBuf::from(home);
+        assert_eq!(expand_home(Path::new("~")), home);
+        assert_eq!(expand_home(Path::new("~/src/x")), home.join("src/x"));
+        assert_eq!(expand_home(Path::new("/srv/~x")), Path::new("/srv/~x"));
+    }
+
+    #[test]
+    fn git_is_found() {
+        assert!(program().is_some());
     }
 }
