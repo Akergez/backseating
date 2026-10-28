@@ -56,7 +56,16 @@ pub fn language_of(path: &str) -> Option<String> {
         "Makefile" | "GNUmakefile" => "make".to_owned(),
         "CMakeLists.txt" => "cmake".to_owned(),
         "Cargo.lock" => "toml".to_owned(),
-        _ => name.rsplit_once('.')?.1.to_lowercase(),
+        _ => {
+            let extension = name.rsplit_once('.')?.1.to_lowercase();
+            // The C# grammar is registered under its canonical name.  Keep
+            // both common extensions on that name so registry lookup and the
+            // highlighter receive the same language identifier.
+            match extension.as_str() {
+                "cs" | "csx" => "csharp".to_owned(),
+                _ => extension,
+            }
+        }
     };
     LanguageRegistry::singleton()
         .language(&language)
@@ -144,6 +153,8 @@ mod tests {
     #[test]
     fn languages_by_name_and_extension() {
         assert_eq!(language_of("src/lib.rs").as_deref(), Some("rs"));
+        assert_eq!(language_of("src/Program.cs").as_deref(), Some("csharp"));
+        assert_eq!(language_of("src/Script.csx").as_deref(), Some("csharp"));
         assert_eq!(language_of("Makefile").as_deref(), Some("make"));
         assert_eq!(language_of("notes.unknownext"), None);
         assert_eq!(language_of("LICENSE"), None);

@@ -18,6 +18,7 @@ mod rows;
 mod view;
 
 use diffreview::{DiffRequest, Refs};
+use gpui_kit::component::dialog::Confirm;
 use gpui_kit::{App, KeyBinding, SharedString};
 
 pub use local::LocalBackend;
@@ -71,6 +72,9 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("shift-r", Reload, Some(CONTEXT)),
         KeyBinding::new("c", Compare, Some(CONTEXT)),
         KeyBinding::new("ctrl-enter", Submit, Some(CONTEXT)),
+        // Dialogs handle the toolkit's Confirm action.  Keep this binding
+        // unscoped so it still works while the annotation textarea owns focus.
+        KeyBinding::new("ctrl-enter", Confirm, None),
     ]);
 }
 
