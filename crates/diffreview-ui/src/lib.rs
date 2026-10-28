@@ -74,7 +74,7 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("ctrl-enter", Submit, Some(CONTEXT)),
         // Dialogs handle the toolkit's Confirm action.  Keep this binding
         // unscoped so it still works while the annotation textarea owns focus.
-        KeyBinding::new("ctrl-enter", Confirm, None),
+        KeyBinding::new("ctrl-enter", Confirm { secondary: false }, None),
     ]);
 }
 
