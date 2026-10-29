@@ -18,7 +18,7 @@ use std::sync::OnceLock;
 
 use gpui_adaptive_colors::{AdaptiveColors, Color, Options, Seed, Source};
 use gpui_kit::component::{Theme, ThemeConfig, ThemeMode};
-use gpui_kit::{App, Global, SharedString, Window, WindowAppearance};
+use gpui_kit::{App, Global, Pixels, SharedString, Window, WindowAppearance, px};
 use gpui_zed_themes::{Registry, Store};
 
 use crate::settings::Settings;
@@ -248,16 +248,66 @@ pub fn choose_theme(mode: ThemeMode, name: &str, cx: &mut App) {
     reload_themes(cx);
 }
 
-/// The fonts in force before anything was chosen: (interface, code).
-static BUILT_IN: OnceLock<(SharedString, SharedString)> = OnceLock::new();
+/// The fonts in force before anything was chosen: (interface, code), and
+/// their sizes.
+static BUILT_IN: OnceLock<BuiltIn> = OnceLock::new();
+
+struct BuiltIn {
+    families: (SharedString, SharedString),
+    sizes: (Pixels, Pixels),
+}
+
+fn built_in(cx: &App) -> &'static BuiltIn {
+    BUILT_IN.get_or_init(|| {
+        let theme = Theme::global(cx);
+        BuiltIn {
+            families: (theme.font_family.clone(), theme.mono_font_family.clone()),
+            sizes: (theme.font_size, theme.mono_font_size),
+        }
+    })
+}
 
 pub fn built_in_fonts(cx: &App) -> (SharedString, SharedString) {
-    BUILT_IN
-        .get_or_init(|| {
-            let theme = Theme::global(cx);
-            (theme.font_family.clone(), theme.mono_font_family.clone())
-        })
-        .clone()
+    built_in(cx).families.clone()
+}
+
+/// The sizes a font size may be set to, in pixels, by role.
+pub fn font_sizes(role: FontRole) -> std::ops::RangeInclusive<u16> {
+    match role {
+        FontRole::Interface => 11..=24,
+        FontRole::Code => 9..=32,
+    }
+}
+
+/// The size a role's text is drawn at, in whole pixels.
+pub fn font_size(role: FontRole, cx: &App) -> u16 {
+    let appearance = &Settings::get(cx).appearance;
+    let (chosen, built_in) = match role {
+        FontRole::Interface => (appearance.ui_font_size, built_in(cx).sizes.0),
+        FontRole::Code => (appearance.code_font_size, built_in(cx).sizes.1),
+    };
+    chosen
+        .unwrap_or(f32::from(built_in).round() as u16)
+        .clamp(*font_sizes(role).start(), *font_sizes(role).end())
+}
+
+/// Whether a role's size is the built-in one.
+pub fn font_size_is_default(role: FontRole, cx: &App) -> bool {
+    let appearance = &Settings::get(cx).appearance;
+    match role {
+        FontRole::Interface => appearance.ui_font_size.is_none(),
+        FontRole::Code => appearance.code_font_size.is_none(),
+    }
+}
+
+/// `None` goes back to the built-in size.
+pub fn set_font_size(role: FontRole, size: Option<u16>, cx: &mut App) {
+    let size = size.map(|size| size.clamp(*font_sizes(role).start(), *font_sizes(role).end()));
+    Settings::update(cx, |settings| match role {
+        FontRole::Interface => settings.appearance.ui_font_size = size,
+        FontRole::Code => settings.appearance.code_font_size = size,
+    });
+    apply_fonts(cx);
 }
 
 /// The family chosen for a role, or nothing for the built-in one.
@@ -279,10 +329,15 @@ pub fn set_font_choice(role: FontRole, family: Option<String>, cx: &mut App) {
     apply_fonts(cx);
 }
 
-/// Makes the theme's fonts the chosen ones. A font uninstalled since it was
-/// chosen is not used; the setting stays, in case it comes back.
+/// Makes the theme's fonts the chosen ones, at the chosen sizes. A font
+/// uninstalled since it was chosen is not used; the setting stays, in case it
+/// comes back.
 pub fn apply_fonts(cx: &mut App) {
     let built_in = built_in_fonts(cx);
+    let sizes = (
+        px(f32::from(font_size(FontRole::Interface, cx))),
+        px(f32::from(font_size(FontRole::Code, cx))),
+    );
     let known = cx.text_system().all_font_names();
     let pick = |role: FontRole, fallback: &SharedString| -> SharedString {
         font_choice(role, cx)
@@ -293,10 +348,17 @@ pub fn apply_fonts(cx: &mut App) {
     let interface = pick(FontRole::Interface, &built_in.0);
     let code = pick(FontRole::Code, &built_in.1);
     let theme = Theme::global(cx);
-    if theme.font_family != interface || theme.mono_font_family != code {
+    if theme.font_family != interface
+        || theme.mono_font_family != code
+        || (theme.font_size, theme.mono_font_size) != sizes
+    {
         Theme::update(cx, |theme| {
             theme.font_family = interface;
             theme.mono_font_family = code;
+            // The interface's size is the window's rem: everything sized
+            // in rems, which is nearly everything, follows it.
+            theme.font_size = sizes.0;
+            theme.mono_font_size = sizes.1;
         });
     }
 }

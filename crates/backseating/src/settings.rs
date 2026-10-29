@@ -34,6 +34,11 @@ pub struct Appearance {
     pub ui_font: Option<String>,
     #[serde(default)]
     pub code_font: Option<String>,
+    /// In pixels; nothing for the built-in size.
+    #[serde(default)]
+    pub ui_font_size: Option<u16>,
+    #[serde(default)]
+    pub code_font_size: Option<u16>,
 }
 
 impl Global for Settings {}

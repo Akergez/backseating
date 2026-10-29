@@ -10,6 +10,8 @@ use diffreview::{DiffRequest, DiffSource, FileDiff, FileStatus, LineKind, Refs};
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::dialog::{DialogAction, DialogClose, DialogFooter};
 use gpui_kit::component::list::ListItem;
+use gpui_kit::component::resizable::{h_resizable, resizable_panel};
+use gpui_kit::component::scroll::{ScrollableElement as _, ScrollbarAxis};
 use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::tree::{TreeItem, TreeState, tree};
 use gpui_kit::component::{
@@ -18,8 +20,8 @@ use gpui_kit::component::{
 use gpui_kit::prelude::*;
 use gpui_kit::{
     AnyElement, AppContext, ClipboardItem, Context, ElementId, Entity, EventEmitter, FocusHandle,
-    Hsla, Render, ScrollStrategy, SharedString, StyledText, Subscription, UniformListScrollHandle,
-    Window, div, uniform_list,
+    Hsla, ListHorizontalSizingBehavior, Render, ScrollStrategy, SharedString, StyledText,
+    Subscription, UniformListScrollHandle, Window, div, point, px, uniform_list,
 };
 
 use crate::compare::ComparePicker;
@@ -46,6 +48,8 @@ pub struct ReviewView {
     /// The file on screen, by index into `files`.
     file: usize,
     rows: Vec<Row>,
+    /// The row the diff pane measures for its width, by index into `rows`.
+    widest: usize,
     cursor: usize,
     store: Store,
     reviewed: HashSet<String>,
@@ -94,6 +98,7 @@ impl ReviewView {
             error: None,
             file: 0,
             rows: Vec::new(),
+            widest: 0,
             cursor: 0,
             store: Store::default(),
             reviewed: HashSet::new(),
@@ -222,6 +227,9 @@ impl ReviewView {
             .current()
             .map(|file| rows::rows(file, &self.store))
             .unwrap_or_default();
+        self.widest = self
+            .current()
+            .map_or(0, |file| rows::widest(file, &self.store, &self.rows));
         self.cursor = self.cursor.min(self.rows.len().saturating_sub(1));
         cx.notify();
     }
@@ -233,6 +241,9 @@ impl ReviewView {
         }
         self.file = index;
         self.showing_files = false;
+        // Another file starts at its left edge.
+        let base = self.scroll.0.borrow().base_handle.clone();
+        base.set_offset(point(px(0.), base.offset().y));
         self.rebuild_rows(cx);
         self.cursor = self
             .current()
@@ -772,11 +783,17 @@ impl ReviewView {
             return div().into_any_element();
         };
         let selected = index == self.cursor;
+        // Everything in a row is measured from the code's size, which is set
+        // apart from the interface's: a line is twice as tall as its text, a
+        // line number column holds five digits, the marker one.
+        let size = theme.mono_font_size;
+        let number_width = size * (10. / 3.);
+        let marker_width = size * (4. / 3.);
         let base = h_flex()
             .id(ElementId::Name(format!("review-row-{index}").into()))
-            .h_6()
+            .h(size * 2.)
             .w_full()
-            .text_xs()
+            .text_size(size)
             .font_family(theme.mono_font_family.clone())
             .border_l_2()
             .border_color(if selected {
@@ -794,28 +811,16 @@ impl ReviewView {
                 }
             }));
         // A note is one row: its first line, and a mark when there is more.
-        let note = match self.rows[index] {
-            Row::FileNote => Some(("› file: ", self.store.get(&file.path, Anchor::File))),
-            Row::Note(line) => Some((
-                "› ",
-                Anchor::of(&file.lines[line]).and_then(|anchor| self.store.get(&file.path, anchor)),
-            )),
-            Row::Line(_) => None,
-        };
-        if let Some((prefix, annotation)) = note {
-            let text = annotation
-                .map(|annotation| annotation.comment.as_str())
-                .unwrap_or_default();
-            let first = text.lines().next().unwrap_or_default();
-            let more = if text.lines().count() > 1 { " …" } else { "" };
+        if let Some(text) = rows::note_text(self.rows[index], file, &self.store) {
             return base
                 .bg(theme.warning.opacity(0.12))
-                .pl(gpui_kit::rems(5.5))
+                .pl(number_width * 2. + marker_width)
                 .child(
                     div()
-                        .truncate()
+                        .flex_none()
+                        .whitespace_nowrap()
                         .text_color(theme.foreground)
-                        .child(format!("{prefix}{first}{more}")),
+                        .child(text),
                 )
                 .into_any_element();
         }
@@ -825,7 +830,7 @@ impl ReviewView {
                 let line = &file.lines[line_index];
                 let number = |number: Option<u32>| {
                     div()
-                        .w_10()
+                        .w(number_width)
                         .flex_none()
                         .pr_1()
                         .text_right()
@@ -851,16 +856,17 @@ impl ReviewView {
                     .child(number(line.new))
                     .child(
                         div()
-                            .w_4()
+                            .w(marker_width)
                             .flex_none()
                             .text_color(theme.muted_foreground)
                             .child(marker),
                     )
+                    // Long lines are not cut: the pane scrolls sideways.
                     .child(
                         div()
-                            .flex_1()
-                            .min_w_0()
-                            .truncate()
+                            .flex_none()
+                            .pr_4()
+                            .whitespace_nowrap()
                             .when(line.kind == LineKind::Hunk, |text| {
                                 text.text_color(theme.muted_foreground)
                             })
@@ -953,7 +959,7 @@ impl ReviewView {
                 .child("Binary file")
                 .into_any_element()
         } else {
-            uniform_list(
+            let mut list = uniform_list(
                 "review-rows",
                 self.rows.len(),
                 cx.processor(|this, range: std::ops::Range<usize>, _window, cx| {
@@ -963,8 +969,22 @@ impl ReviewView {
                 }),
             )
             .track_scroll(&self.scroll)
-            .size_full()
-            .into_any_element()
+            // As wide as the widest row, so long lines scroll sideways
+            // instead of being cut.
+            .with_width_from_item(Some(self.widest))
+            .with_horizontal_sizing_behavior(ListHorizontalSizingBehavior::Unconstrained)
+            .size_full();
+            // A gesture keeps to the axis it starts on: a vertical swipe on
+            // a touchpad does not drift sideways, nor a sideways one down.
+            // The wheel scrolls down, Shift and the wheel sideways. (The list
+            // has no builder for it.)
+            list.style().restrict_scroll_to_axis = Some(true);
+            div()
+                .relative()
+                .size_full()
+                .child(list)
+                .scrollbar(&self.scroll, ScrollbarAxis::Both)
+                .into_any_element()
         };
         v_flex()
             .size_full()
@@ -1008,25 +1028,15 @@ impl Render for ReviewView {
                 self.render_diff(true, cx)
             }
         } else {
-            h_flex()
-                .size_full()
-                .items_start()
+            // The files' pane is as wide as it is dragged to.
+            h_resizable("review-split")
                 .child(
-                    div()
-                        .w_64()
-                        .flex_none()
-                        .h_full()
-                        .border_r_1()
-                        .border_color(theme.border)
-                        .child(self.render_files(cx)),
+                    resizable_panel()
+                        .size(px(256.))
+                        .size_range(px(160.)..px(640.))
+                        .child(div().size_full().child(self.render_files(cx))),
                 )
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .h_full()
-                        .child(self.render_diff(false, cx)),
-                )
+                .child(resizable_panel().child(self.render_diff(false, cx)))
                 .into_any_element()
         };
         v_flex()
@@ -1083,5 +1093,210 @@ fn status_color(status: FileStatus, theme: &gpui_kit::component::Theme) -> Hsla 
         FileStatus::Deleted => theme.danger,
         FileStatus::Renamed => theme.info,
         FileStatus::Modified => theme.warning,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::rc::Rc;
+
+    use diffreview::{DiffRequest, Refs};
+    use gpui_kit::test::TestWindowExt as _;
+    use gpui_kit::{
+        AnyWindowHandle, App, AppContext as _, Bounds, Entity, InputEvent as _, Pixels, Point,
+        ScrollDelta, ScrollWheelEvent, TestAppContext, TouchPhase, Window, WindowBounds,
+        WindowOptions, point, px, size,
+    };
+
+    use gpui_kit::component::Theme;
+
+    use super::ReviewView;
+    use crate::{Done, ReviewBackend, ReviewOptions};
+
+    /// One file: many short lines and one far wider than the window. It
+    /// answers after the call, as a backend on another thread does.
+    struct Fixed;
+
+    impl ReviewBackend for Fixed {
+        fn diff(&self, _: DiffRequest, cx: &mut App, done: Done<String>) {
+            let mut text =
+                String::from("diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -0,0 +1,100 @@\n");
+            for line in 0..99 {
+                text.push_str(&format!("+line {line}\n"));
+            }
+            text.push_str(&format!("+{}\n", "wide ".repeat(200)));
+            cx.defer(move |cx| done(Ok(text), cx));
+        }
+
+        fn refs(&self, cx: &mut App, done: Done<Refs>) {
+            cx.defer(move |cx| done(Ok(Refs::default()), cx));
+        }
+    }
+
+    fn open(cx: &mut TestAppContext) -> (AnyWindowHandle, Entity<ReviewView>) {
+        cx.update(|cx| {
+            gpui_kit::init(cx);
+            crate::init(cx);
+        });
+        let opened = cx.update(|cx| {
+            gpui_kit::open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(Bounds::new(
+                        Default::default(),
+                        size(px(1000.), px(600.)),
+                    ))),
+                    ..Default::default()
+                },
+                cx,
+                |window, cx| {
+                    cx.new(|cx| {
+                        ReviewView::new(
+                            Rc::new(Fixed),
+                            DiffRequest::default(),
+                            ReviewOptions::default(),
+                            window,
+                            cx,
+                        )
+                    })
+                },
+            )
+            .expect("open test window")
+        });
+        cx.run_until_parked();
+        opened
+    }
+
+    fn offset(view: &Entity<ReviewView>, cx: &mut TestAppContext) -> Point<Pixels> {
+        cx.read(|cx| view.read(cx).scroll.0.borrow().base_handle.offset())
+    }
+
+    fn pane(view: &Entity<ReviewView>, cx: &mut TestAppContext) -> Bounds<Pixels> {
+        cx.read(|cx| view.read(cx).scroll.0.borrow().base_handle.bounds())
+    }
+
+    /// A touchpad swipe: precise deltas, one gesture from `Started` on,
+    /// with one event in the middle leaning the other way, as a finger does.
+    fn swipe(
+        window: &mut Window,
+        at: Point<Pixels>,
+        step: Point<Pixels>,
+        wobble: Point<Pixels>,
+        cx: &mut App,
+    ) {
+        for index in 0..6 {
+            window.dispatch_event(
+                ScrollWheelEvent {
+                    position: at,
+                    delta: ScrollDelta::Pixels(if index == 3 { wobble } else { step }),
+                    touch_phase: if index == 0 {
+                        TouchPhase::Started
+                    } else {
+                        TouchPhase::Moved
+                    },
+                    ..Default::default()
+                }
+                .to_platform_input(),
+                cx,
+            );
+        }
+        window.render_frame(cx);
+    }
+
+    #[gpui_kit::test]
+    fn long_lines_scroll_sideways_without_drifting(cx: &mut TestAppContext) {
+        let (handle, view) = open(cx);
+        cx.update_window(handle, |_, window, cx| window.render_frame(cx))
+            .unwrap();
+        let at = pane(&view, cx).center();
+        let start = offset(&view, cx);
+
+        // Mostly down, a little sideways: only down.
+        cx.update_window(handle, |_, window, cx| {
+            swipe(
+                window,
+                at,
+                point(px(-3.), px(-20.)),
+                point(px(-8.), px(-5.)),
+                cx,
+            )
+        })
+        .unwrap();
+        let down = offset(&view, cx);
+        assert!(down.y < start.y, "scrolled down: {down:?}");
+        assert_eq!(down.x, start.x, "no sideways drift");
+
+        // Mostly sideways, a little down: only sideways, and past the
+        // window's width, since the wide line is wider than it.
+        cx.update_window(handle, |_, window, cx| {
+            swipe(
+                window,
+                at,
+                point(px(-200.), px(-10.)),
+                point(px(-5.), px(-8.)),
+                cx,
+            )
+        })
+        .unwrap();
+        let side = offset(&view, cx);
+        assert_eq!(side.y, down.y, "no vertical drift");
+        assert!(
+            side.x < px(-1000.) + px(200.),
+            "scrolled sideways: {side:?}"
+        );
+
+        // A plain wheel (lines, not pixels) over the list scrolls down only.
+        cx.update_window(handle, |_, window, cx| {
+            window.dispatch_event(
+                ScrollWheelEvent {
+                    position: at,
+                    delta: ScrollDelta::Lines(point(0., -3.)),
+                    ..Default::default()
+                }
+                .to_platform_input(),
+                cx,
+            );
+            window.render_frame(cx);
+        })
+        .unwrap();
+        let wheel = offset(&view, cx);
+        assert!(wheel.y < side.y);
+        assert_eq!(wheel.x, side.x);
+    }
+
+    #[gpui_kit::test]
+    fn the_files_pane_is_resized_by_dragging_its_edge(cx: &mut TestAppContext) {
+        let (handle, view) = open(cx);
+        cx.update_window(handle, |_, window, cx| window.render_frame(cx))
+            .unwrap();
+        let before = pane(&view, cx).left();
+        let y = pane(&view, cx).center().y;
+        cx.update_window(handle, |_, window, cx| {
+            window.drag(point(before, y), point(before + px(120.), y), cx);
+            window.render_frame(cx);
+        })
+        .unwrap();
+        let after = pane(&view, cx).left();
+        assert!(
+            (after - before - px(120.)).abs() < px(4.),
+            "the diff now starts at {after:?}, was {before:?}"
+        );
+    }
+
+    #[gpui_kit::test]
+    fn rows_follow_the_code_size(cx: &mut TestAppContext) {
+        let (handle, view) = open(cx);
+        let row_height = |cx: &mut TestAppContext| {
+            cx.update_window(handle, |_, window, cx| window.render_frame(cx))
+                .unwrap();
+            cx.read(|cx| {
+                let view = view.read(cx);
+                let size = view.scroll.0.borrow().last_item_size.expect("laid out");
+                size.contents.height / view.rows.len() as f32
+            })
+        };
+        cx.update(|cx| Theme::global_mut(cx).mono_font_size = px(12.));
+        assert_eq!(row_height(cx), px(24.));
+        cx.update(|cx| Theme::global_mut(cx).mono_font_size = px(20.));
+        assert_eq!(row_height(cx), px(40.));
     }
 }

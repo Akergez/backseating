@@ -29,6 +29,40 @@ pub fn rows(file: &FileDiff, store: &Store) -> Vec<Row> {
     rows
 }
 
+/// The text a note row shows: its first line, and a mark when there is more.
+pub fn note_text(row: Row, file: &FileDiff, store: &Store) -> Option<String> {
+    let (prefix, annotation) = match row {
+        Row::FileNote => ("› file: ", store.get(&file.path, Anchor::File)),
+        Row::Note(line) => (
+            "› ",
+            Anchor::of(&file.lines[line]).and_then(|anchor| store.get(&file.path, anchor)),
+        ),
+        Row::Line(_) => return None,
+    };
+    let text = annotation
+        .map(|annotation| annotation.comment.as_str())
+        .unwrap_or_default();
+    let first = text.lines().next().unwrap_or_default();
+    let more = if text.lines().count() > 1 { " …" } else { "" };
+    Some(format!("{prefix}{first}{more}"))
+}
+
+/// The row with the most characters, tabs counted as drawn: the diff pane
+/// measures it for how far it scrolls sideways.
+pub fn widest(file: &FileDiff, store: &Store, rows: &[Row]) -> usize {
+    let width = |row: Row| match row {
+        Row::Line(index) => {
+            let text = &file.lines[index].text;
+            text.chars().count() + 3 * text.matches('\t').count()
+        }
+        _ => note_text(row, file, store).map_or(0, |text| text.chars().count()),
+    };
+    rows.iter()
+        .enumerate()
+        .max_by_key(|&(at, row)| (width(*row), std::cmp::Reverse(at)))
+        .map_or(0, |(at, _)| at)
+}
+
 /// The row a hunk move lands on: the first changed line of the next (or
 /// previous) run of changes after `from`.
 pub fn hunk_row(file: &FileDiff, rows: &[Row], from: usize, forward: bool) -> Option<usize> {
@@ -104,6 +138,29 @@ mod tests {
             ]
         );
         assert_eq!(rows[5], Row::Note(3));
+    }
+
+    #[test]
+    fn widest_row_counts_tabs_and_notes() {
+        let file = diffreview::diff::parse(
+            "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1,3 +1,3 @@\n abcdef\n-\t\tx\n+y\n",
+        )
+        .remove(0);
+        let mut store = Store::default();
+        let rows_without = rows(&file, &store);
+        // 0 hunk header, 1 abcdef, 2 -\t\tx (nine columns), 3 +y
+        assert_eq!(widest(&file, &store, &rows_without), 0);
+        store.add(Annotation {
+            file: "x".into(),
+            anchor: Anchor::Line {
+                line: 2,
+                change: ChangeType::Add,
+            },
+            end_line: None,
+            comment: "a note longer than any line of this little diff".into(),
+        });
+        let rows = rows(&file, &store);
+        assert_eq!(rows[widest(&file, &store, &rows)], Row::Note(3));
     }
 
     #[test]

@@ -5,12 +5,12 @@
 //! lays them out, as Aiddiction's does.
 
 use gpui_adaptive_colors::Color;
-use gpui_kit::component::button::{Button, ButtonGroup};
+use gpui_kit::component::button::{Button, ButtonGroup, ButtonVariants as _};
 use gpui_kit::component::select::{SearchableVec, Select, SelectEvent, SelectState};
 use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{
-    ActiveTheme, IndexPath, Selectable as _, Sizable as _, StyledExt as _, ThemeMode, h_flex,
-    v_flex,
+    ActiveTheme, Disableable as _, IconName, IndexPath, Selectable as _, Sizable as _,
+    StyledExt as _, ThemeMode, h_flex, v_flex,
 };
 use gpui_kit::prelude::*;
 use gpui_kit::{App, AppContext, Context, Entity, Render, SharedString, Subscription, Window, div};
@@ -165,6 +165,53 @@ fn row(title: &'static str, subtitle: &'static str, cx: &App) -> impl IntoElemen
     )
 }
 
+/// A size, with a step down and a step up, and a way back to the built-in
+/// one. It takes effect at once, like the rest of the page.
+fn font_size(role: FontRole, cx: &App) -> impl IntoElement {
+    let size = appearance::font_size(role, cx);
+    let range = appearance::font_sizes(role);
+    let id = match role {
+        FontRole::Interface => "ui-size",
+        FontRole::Code => "code-size",
+    };
+    h_flex()
+        .flex_none()
+        .w_64()
+        .gap_1()
+        .child(
+            Button::new((id, 0usize))
+                .small()
+                .outline()
+                .icon(IconName::Minus)
+                .disabled(size <= *range.start())
+                .on_click(move |_, _, cx| appearance::set_font_size(role, Some(size - 1), cx)),
+        )
+        .child(
+            div()
+                .w_12()
+                .text_center()
+                .text_sm()
+                .child(format!("{size} px")),
+        )
+        .child(
+            Button::new((id, 1usize))
+                .small()
+                .outline()
+                .icon(IconName::Plus)
+                .disabled(size >= *range.end())
+                .on_click(move |_, _, cx| appearance::set_font_size(role, Some(size + 1), cx)),
+        )
+        .when(!appearance::font_size_is_default(role, cx), |row| {
+            row.child(
+                Button::new((id, 2usize))
+                    .small()
+                    .ghost()
+                    .label("Reset")
+                    .on_click(move |_, _, cx| appearance::set_font_size(role, None, cx)),
+            )
+        })
+}
+
 fn colors(current: Option<Color>, cx: &App) -> impl IntoElement {
     let (ring, gap) = (cx.theme().foreground, cx.theme().background);
     h_flex()
@@ -304,8 +351,24 @@ impl Render for SettingsPage {
                     .child(
                         h_flex()
                             .gap_3()
+                            .child(row(
+                                "Interface size",
+                                "Everything that is not code grows with it",
+                                cx,
+                            ))
+                            .child(font_size(FontRole::Interface, cx)),
+                    )
+                    .child(
+                        h_flex()
+                            .gap_3()
                             .child(row("Code font", "The diff and the file names", cx))
                             .child(select(&self.code_font, "Search fonts")),
+                    )
+                    .child(
+                        h_flex()
+                            .gap_3()
+                            .child(row("Code size", "The lines of the diff", cx))
+                            .child(font_size(FontRole::Code, cx)),
                     )
                     .child(
                         div()
