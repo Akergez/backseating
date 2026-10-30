@@ -16,3 +16,9 @@ serde_json.workspace = true
 # the system's colour, and themes for the Zed editor from its registry.
 gpui-adaptive-colors = { git = "https://github.com/Akergez/gpui-adaptive-colors", rev = "55e9997f9bf9858f7a9242bcf75a92cf15732596" }
 gpui-zed-themes = { git = "https://github.com/Akergez/gpui-adaptive-colors", rev = "55e9997f9bf9858f7a9242bcf75a92cf15732596" }
+
+# In a flatpak a picked folder comes back as a path in the document portal;
+# the portal says where it really is.
+[target.'cfg(target_os = "linux")'.dependencies]
+ashpd = { version = "0.13", default-features = false, features = ["async-io", "documents"] }
+futures-lite = "2"

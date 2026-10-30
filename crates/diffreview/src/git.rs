@@ -26,7 +26,15 @@ impl LocalRepo {
         let output = git(dir, &["rev-parse", "--show-toplevel"])?;
         let root = String::from_utf8_lossy(&output.stdout).trim().to_owned();
         if !output.status.success() || root.is_empty() {
-            return Err(format!("{} is not in a git repository", dir.display()));
+            // git's own word for it: "dubious ownership" is not the same
+            // trouble as no repository at all.
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let reason = stderr.trim();
+            return Err(if reason.is_empty() {
+                format!("{} is not in a git repository", dir.display())
+            } else {
+                format!("{} is not in a git repository: {reason}", dir.display())
+            });
         }
         Ok(Self {
             root: PathBuf::from(root),
@@ -271,11 +279,30 @@ fn command(program: &Path) -> Command {
     command
 }
 
+/// Where the user's own git configuration is, when this runs in a flatpak.
+///
+/// A flatpak's `XDG_CONFIG_HOME` is the application's own folder, so git
+/// would miss `~/.config/git`: the user's config, global ignore file and
+/// attributes.
+fn host_config_home() -> Option<PathBuf> {
+    if !Path::new("/.flatpak-info").exists() {
+        return None;
+    }
+    std::env::var_os("HOST_XDG_CONFIG_HOME")
+        .filter(|dir| !dir.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))
+}
+
 fn git(dir: &Path, args: &[&str]) -> Result<Output, String> {
     let program = program().ok_or_else(|| {
         format!("git was not found: install it, or set {GIT_VARIABLE} to the git to run")
     })?;
-    command(program)
+    let mut command = command(program);
+    if let Some(config_home) = host_config_home() {
+        command.env("XDG_CONFIG_HOME", config_home);
+    }
+    command
         .args(args)
         .current_dir(dir)
         // Never wait for a person, never page, never translate messages that

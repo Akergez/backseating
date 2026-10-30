@@ -6,6 +6,7 @@
 //! settings — light or dark, colours, themes, fonts — are one more tab.
 
 mod appearance;
+mod host_path;
 mod settings;
 mod settings_page;
 
@@ -120,6 +121,16 @@ impl Hub {
                 Ok(result) => result,
                 // The picker went away without an answer.
                 Err(_) => return,
+            };
+            // A sandbox's picker answers with the document portal's paths.
+            let result = match result {
+                Ok(Some(paths)) => Ok(Some(
+                    cx.background_spawn(async move {
+                        paths.into_iter().map(host_path::resolve).collect()
+                    })
+                    .await,
+                )),
+                other => other,
             };
             let _ = this.update_in(cx, |this, window, cx| match result {
                 Ok(Some(paths)) => this.open_projects(paths, window, cx),
@@ -405,6 +416,24 @@ fn folder_name(path: &Path) -> String {
         .unwrap_or_else(|| path.display().to_string())
 }
 
+/// Folders picked in a flatpak before the picker's paths were looked up are
+/// kept as the document portal's; they become the folders' own paths, and a
+/// folder that is then there twice is kept once. Whether anything changed.
+fn resolve_stored(store: &mut ProjectStore) -> bool {
+    let before = (store.projects.clone(), store.last_project.clone());
+    let mut seen = std::collections::HashSet::new();
+    store.projects = std::mem::take(&mut store.projects)
+        .into_iter()
+        .map(|mut project| {
+            project.path = host_path::resolve(project.path);
+            project
+        })
+        .filter(|project| seen.insert(project.path.clone()))
+        .collect();
+    store.last_project = store.last_project.take().map(host_path::resolve);
+    (&store.projects, &store.last_project) != (&before.0, &before.1)
+}
+
 fn start(cx: &mut App) {
     gpui_kit::init(cx);
     diffreview_ui::init(cx);
@@ -424,8 +453,11 @@ fn start(cx: &mut App) {
     cx.set_global(settings);
     appearance::init(cx);
 
+    if resolve_stored(&mut store) {
+        let _ = store.save();
+    }
     if let Some(path) = std::env::args_os().nth(1) {
-        let path = PathBuf::from(path);
+        let path = host_path::resolve(PathBuf::from(path));
         store.add(std::fs::canonicalize(&path).unwrap_or(path));
         let _ = store.save();
     }

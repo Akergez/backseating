@@ -594,9 +594,11 @@ dependencies = [
 name = "backseating"
 version = "0.1.6"
 dependencies = [
+ "ashpd",
  "diffreview",
  "diffreview-ui",
  "dirs 6.0.0",
+ "futures-lite",
  "gpui-adaptive-colors",
  "gpui-kit",
  "gpui-zed-themes",
