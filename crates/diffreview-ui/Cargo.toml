@@ -23,6 +23,10 @@ gpui-kit = { version = "0.7.0", features = [
     "tree-sitter-python", "tree-sitter-ruby", "tree-sitter-rust", "tree-sitter-scala", "tree-sitter-swift",
     "tree-sitter-toml", "tree-sitter-tsx", "tree-sitter-typescript", "tree-sitter-yaml", "tree-sitter-zig",
 ] }
+# The toolkit registers C# without its highlight query; its grammar crate
+# ships the query, which `highlight.rs` registers by hand. The same version
+# the toolkit depends on, so cargo builds the grammar once.
+tree-sitter-c-sharp = "0.23"
 dirs.workspace = true
 serde.workspace = true
 serde_json.workspace = true

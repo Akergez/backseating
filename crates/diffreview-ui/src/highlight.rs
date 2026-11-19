@@ -9,6 +9,7 @@
 //! of it there is.
 
 use std::ops::Range;
+use std::sync::OnceLock;
 
 use diffreview::{FileDiff, LineKind};
 use std::sync::Arc;
@@ -73,8 +74,30 @@ pub fn language_of(path: &str) -> Option<String> {
         .then_some(language)
 }
 
+/// The toolkit registers the C# grammar with an empty highlight query: it
+/// parses, nothing is captured, and a `.cs` file is drawn as plain text. The
+/// grammar crate ships the query, so it is put into the toolkit's registry
+/// the first time a diff is coloured. (`LanguageRegistry::register` replaces
+/// the whole entry, hence the config is taken from the registry and only its
+/// queries are filled in.)
+fn register_csharp_highlights() {
+    static ONCE: OnceLock<()> = OnceLock::new();
+    ONCE.get_or_init(|| {
+        let registry = LanguageRegistry::singleton();
+        let Some(mut config) = registry.language("csharp") else {
+            return;
+        };
+        if !config.highlights.is_empty() {
+            return;
+        }
+        config.highlights = tree_sitter_c_sharp::HIGHLIGHTS_QUERY.into();
+        registry.register("csharp", &config);
+    });
+}
+
 /// One entry per line of `file`, empty for a line with nothing to colour.
 pub fn highlight(file: &FileDiff, theme: &HighlightTheme) -> Vec<LineStyles> {
+    register_csharp_highlights();
     let empty = || vec![Vec::new(); file.lines.len()];
     let Some(language) = language_of(&file.path) else {
         return empty();
@@ -158,6 +181,19 @@ mod tests {
         assert_eq!(language_of("Makefile").as_deref(), Some("make"));
         assert_eq!(language_of("notes.unknownext"), None);
         assert_eq!(language_of("LICENSE"), None);
+    }
+
+    #[test]
+    fn csharp_lines_get_colours() {
+        let file = diffreview::diff::parse(
+            "diff --git a/Program.cs b/Program.cs\n--- a/Program.cs\n+++ b/Program.cs\n@@ -1,1 +1,1 @@\n-public class Old {}\n+public class New { }\n",
+        )
+        .remove(0);
+        let lines = highlight(&file, &HighlightTheme::default_dark());
+        assert!(
+            lines.iter().any(|styles| !styles.is_empty()),
+            "no C# line got a style: {lines:?}"
+        );
     }
 
     #[test]

@@ -1499,6 +1499,7 @@ dependencies = [
  "gpui-kit",
  "serde",
  "serde_json",
+ "tree-sitter-c-sharp",
 ]
 
 [[package]]
